@@ -5,10 +5,6 @@ import run_nets as r
 from absl import flags
 from absl import app
 
-if (os.getcwd=="/kaggle/working"):
-    poth="../input/outputfile"
-elif (os.getcwd=="/content"):
-    poth="/content/Scale-project"
     
 
     
@@ -17,8 +13,8 @@ elif (os.getcwd=="/content"):
 
 FLAGS = flags.FLAGS
 #name of flag | default | explanation
-flags.DEFINE_string("arch_config",poth+"/configs/scale.cfg","file where we are getting our architechture from")
-flags.DEFINE_string("network",poth+"/topologies/conv_nets/yolo_tiny.csv","topology that we are reading")
+flags.DEFINE_string("arch_config","../input/outputfile/configs/scale.cfg","file where we are getting our architechture from")
+flags.DEFINE_string("network","../input/outputfile/topologies/conv_nets/yolo_tiny.csv","topology that we are reading")
 
 
 class scale:
