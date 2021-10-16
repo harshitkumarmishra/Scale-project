@@ -7,8 +7,9 @@ from absl import app
 
 FLAGS = flags.FLAGS
 #name of flag | default | explanation
-flags.DEFINE_string("arch_config","/content/Scale-project/configs/scale.cfg","file where we are getting our architechture from")
-flags.DEFINE_string("network","/content/Scale-project/topologies/conv_nets/yolo_tiny.csv","topology that we are reading")
+poth=os.getcwd();
+flags.DEFINE_string("arch_config",poth+"/content/Scale-project/configs/scale.cfg","file where we are getting our architechture from")
+flags.DEFINE_string("network",poth+"/content/Scale-project/topologies/conv_nets/yolo_tiny.csv","topology that we are reading")
 
 
 class scale:
