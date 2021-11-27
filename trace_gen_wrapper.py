@@ -112,74 +112,55 @@ def gen_max_bw_numbers( dram_ifmap_trace_file, dram_filter_trace_file,
     max_dram_activation_bw = 0
     num_bytes = 0
     max_dram_act_clk = ""
-    f = open(dram_ifmap_trace_file, 'r')
+    with open(dram_ifmap_trace_file, 'r') as f:
+        for row in f:
+            clk = row.split(',')[0]
+            num_bytes = len(row.split(',')) - 2
 
-    for row in f:
-        clk = row.split(',')[0]
-        num_bytes = len(row.split(',')) - 2
-        
-        
-        if max_dram_activation_bw < num_bytes:
-            max_dram_activation_bw = num_bytes
-            max_dram_act_clk = clk
-    f.close()
 
+            if max_dram_activation_bw < num_bytes:
+                max_dram_activation_bw = num_bytes
+                max_dram_act_clk = clk
     max_dram_filter_bw = 0
     num_bytes = 0
     max_dram_filt_clk = ""
-    f = open(dram_filter_trace_file, 'r')
+    with open(dram_filter_trace_file, 'r') as f:
+        for row in f:
+            clk = row.split(',')[0]
+            num_bytes = len(row.split(',')) - 2
 
-    for row in f:
-        clk = row.split(',')[0]
-        num_bytes = len(row.split(',')) - 2
-
-        if max_dram_filter_bw < num_bytes:
-            max_dram_filter_bw = num_bytes
-            max_dram_filt_clk = clk
-
-    f.close()
+            if max_dram_filter_bw < num_bytes:
+                max_dram_filter_bw = num_bytes
+                max_dram_filt_clk = clk
 
     max_dram_ofmap_bw = 0
     num_bytes = 0
     max_dram_ofmap_clk = ""
-    f = open(dram_ofmap_trace_file, 'r')
+    with open(dram_ofmap_trace_file, 'r') as f:
+        for row in f:
+            clk = row.split(',')[0]
+            num_bytes = len(row.split(',')) - 2
 
-    for row in f:
-        clk = row.split(',')[0]
-        num_bytes = len(row.split(',')) - 2
+            if max_dram_ofmap_bw < num_bytes:
+                max_dram_ofmap_bw = num_bytes
+                max_dram_ofmap_clk = clk
 
-        if max_dram_ofmap_bw < num_bytes:
-            max_dram_ofmap_bw = num_bytes
-            max_dram_ofmap_clk = clk
-
-    f.close()
-    
     max_sram_ofmap_bw = 0
     num_bytes = 0
-    f = open(sram_write_trace_file, 'r')
+    with open(sram_write_trace_file, 'r') as f:
+        for row in f:
+            num_bytes = len(row.split(',')) - 2
 
-    for row in f:
-        num_bytes = len(row.split(',')) - 2
-
-        if max_sram_ofmap_bw < num_bytes:
-            max_sram_ofmap_bw = num_bytes
-
-    f.close()
-
+            max_sram_ofmap_bw = max(max_sram_ofmap_bw, num_bytes)
     max_sram_read_bw = 0
     num_bytes = 0
-    f = open(sram_read_trace_file, 'r')
+    with open(sram_read_trace_file, 'r') as f:
+        for row in f:
+            num_bytes = len(row.split(',')) - 2
 
-    for row in f:
-        num_bytes = len(row.split(',')) - 2
-
-        if max_sram_read_bw < num_bytes:
-            max_sram_read_bw = num_bytes
-
-    f.close()
-
+            max_sram_read_bw = max(max_sram_read_bw, num_bytes)
     #print("DRAM IFMAP Read BW, DRAM Filter Read BW, DRAM OFMAP Write BW, SRAM OFMAP Write BW")
-    log  = str(max_dram_activation_bw) + ",\t" + str(max_dram_filter_bw) + ",\t" 
+    log  = str(max_dram_activation_bw) + ",\t" + str(max_dram_filter_bw) + ",\t"
     log += str(max_dram_ofmap_bw) + ",\t" + str(max_sram_read_bw) + ",\t"
     log += str(max_sram_ofmap_bw)  + ","
     # Anand: Enable the following for debug print
@@ -201,112 +182,104 @@ def gen_bw_numbers( dram_ifmap_trace_file, dram_filter_trace_file,
     detailed_log = ""
 
     num_dram_activation_bytes = 0
-    f = open(dram_ifmap_trace_file, 'r')
-    start_clk = 0
-    first = True
+    with open(dram_ifmap_trace_file, 'r') as f:
+        start_clk = 0
+        first = True
 
-    for row in f:
-        num_dram_activation_bytes += len(row.split(',')) - 2
-        
-        elems = row.strip().split(',')
-        clk = float(elems[0])
+        for row in f:
+            num_dram_activation_bytes += len(row.split(',')) - 2
 
-        if first:
-            first = False
-            start_clk = clk
+            elems = row.strip().split(',')
+            clk = float(elems[0])
 
-        if clk < min_clk:
-            min_clk = clk
+            if first:
+                first = False
+                start_clk = clk
 
-    stop_clk = clk
-    detailed_log += str(start_clk) + ",\t" + str(stop_clk) + ",\t" + str(num_dram_activation_bytes) + ",\t"
-    f.close()
+            if clk < min_clk:
+                min_clk = clk
 
+        stop_clk = clk
+        detailed_log += str(start_clk) + ",\t" + str(stop_clk) + ",\t" + str(num_dram_activation_bytes) + ",\t"
     num_dram_filter_bytes = 0
-    f = open(dram_filter_trace_file, 'r')
-    first = True
+    with open(dram_filter_trace_file, 'r') as f:
+        first = True
 
-    for row in f:
-        num_dram_filter_bytes += len(row.split(',')) - 2
+        for row in f:
+            num_dram_filter_bytes += len(row.split(',')) - 2
 
-        elems = row.strip().split(',')
-        clk = float(elems[0])
+            elems = row.strip().split(',')
+            clk = float(elems[0])
 
-        if first:
-            first = False
-            start_clk = clk
+            if first:
+                first = False
+                start_clk = clk
 
-        if clk < min_clk:
-            min_clk = clk
+            if clk < min_clk:
+                min_clk = clk
 
-    stop_clk = clk
-    detailed_log += str(start_clk) + ",\t" + str(stop_clk) + ",\t" + str(num_dram_filter_bytes) + ",\t"
-    f.close()
-
+        stop_clk = clk
+        detailed_log += str(start_clk) + ",\t" + str(stop_clk) + ",\t" + str(num_dram_filter_bytes) + ",\t"
     num_dram_ofmap_bytes = 0
-    f = open(dram_ofmap_trace_file, 'r')
-    first = True
+    with open(dram_ofmap_trace_file, 'r') as f:
+        first = True
 
-    for row in f:
-        num_dram_ofmap_bytes += len(row.split(',')) - 2
+        for row in f:
+            num_dram_ofmap_bytes += len(row.split(',')) - 2
 
-        elems = row.strip().split(',')
-        clk = float(elems[0])
+            elems = row.strip().split(',')
+            clk = float(elems[0])
 
-        if first:
-            first = False
-            start_clk = clk
+            if first:
+                first = False
+                start_clk = clk
 
-    stop_clk = clk
-    detailed_log += str(start_clk) + ",\t" + str(stop_clk) + ",\t" + str(num_dram_ofmap_bytes) + ",\t"
-    f.close()
+        stop_clk = clk
+        detailed_log += str(start_clk) + ",\t" + str(stop_clk) + ",\t" + str(num_dram_ofmap_bytes) + ",\t"
     if clk > max_clk:
         max_clk = clk
-    
+
 
     num_sram_ofmap_bytes = 0
-    f = open(sram_write_trace_file, 'r')
-    first = True
+    with open(sram_write_trace_file, 'r') as f:
+        first = True
 
-    for row in f:
-        num_sram_ofmap_bytes += len(row.split(',')) - 2
-        elems = row.strip().split(',')
-        clk = float(elems[0])
+        for row in f:
+            num_sram_ofmap_bytes += len(row.split(',')) - 2
+            elems = row.strip().split(',')
+            clk = float(elems[0])
 
-        if first:
-            first = False
-            start_clk = clk
+            if first:
+                first = False
+                start_clk = clk
 
-    stop_clk = clk
-    detailed_log += str(start_clk) + ",\t" + str(stop_clk) + ",\t" + str(num_sram_ofmap_bytes) + ",\t"
-    f.close()
+        stop_clk = clk
+        detailed_log += str(start_clk) + ",\t" + str(stop_clk) + ",\t" + str(num_sram_ofmap_bytes) + ",\t"
     if clk > max_clk:
         max_clk = clk
-    
+
     num_sram_read_bytes = 0
     total_util = 0
-    #print("Opening " + sram_trace_file)
-    f = open(sram_read_trace_file, 'r')
-    first = True
+    with open(sram_read_trace_file, 'r') as f:
+        first = True
 
-    for row in f:
-        #num_sram_read_bytes += len(row.split(',')) - 2
-        elems = row.strip().split(',')
-        clk = float(elems[0])
+        for row in f:
+            #num_sram_read_bytes += len(row.split(',')) - 2
+            elems = row.strip().split(',')
+            clk = float(elems[0])
 
-        if first:
-            first = False
-            start_clk = clk
+            if first:
+                first = False
+                start_clk = clk
 
-        #util, valid_bytes = parse_sram_read_data(elems[1:-1], array_h, array_w)
-        valid_bytes = parse_sram_read_data(elems[1:])
-        num_sram_read_bytes += valid_bytes
-        #total_util += util
-        #print("Total Util " + str(total_util) + ", util " + str(util))
+            #util, valid_bytes = parse_sram_read_data(elems[1:-1], array_h, array_w)
+            valid_bytes = parse_sram_read_data(elems[1:])
+            num_sram_read_bytes += valid_bytes
+            #total_util += util
+            #print("Total Util " + str(total_util) + ", util " + str(util))
 
-    stop_clk = clk
-    detailed_log += str(start_clk) + ",\t" + str(stop_clk) + ",\t" + str(num_sram_read_bytes) + ",\t"
-    f.close()
+        stop_clk = clk
+        detailed_log += str(start_clk) + ",\t" + str(stop_clk) + ",\t" + str(num_sram_read_bytes) + ",\t"
     sram_clk = clk
     if clk > max_clk:
         max_clk = clk
@@ -327,7 +300,7 @@ def gen_bw_numbers( dram_ifmap_trace_file, dram_filter_trace_file,
     print("DRAM OFMAP Write BW : \t" + str(dram_ofmap_bw) + units)
     #print("Average utilization : \t"  + str(avg_util) + " %")
     #print("SRAM OFMAP Write BW, Min clk, Max clk")
-    
+
     log = str(dram_activation_bw) + ",\t" + str(dram_filter_bw) + ",\t" + str(dram_ofmap_bw) + ",\t" + str(sram_read_bw) + ",\t" + str(sram_ofmap_bw) + ","
     # Anand: Enable the following line for debug
     #log += str(min_clk) + ",\t" + str(max_clk) + ","
