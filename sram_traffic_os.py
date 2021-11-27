@@ -88,7 +88,7 @@ def gen_read_trace(
     hc = ifmap_w * num_channels
     e2 = ofmap_h * ofmap_w
     #num_ofmap_px = e2 * num_filters
-    
+
     # Tracking variables
     local_cycle     = 0
     #remaining_px    = e2           # Need tracking for individual v folds
@@ -119,11 +119,7 @@ def gen_read_trace(
         base_col_id = r % ofmap_w * stride
         base_addr  = base_row_id * hc + base_col_id * num_channels 
 
-        if r < e2:
-            clk_offset = r * -1             # Clock offset takes care of the skew due to store and forward
-        else:
-            clk_offset = neg_inf            # In case num_ofamp_px < dim_rows
-
+        clk_offset = r * -1 if r < e2 else neg_inf
         row_base_addr.append(base_addr)
         row_clk_offset.append(clk_offset)
         row_ofmap_idx.append(r)
@@ -147,161 +143,152 @@ def gen_read_trace(
         h_fold_col.append(0)
 
 
-    # Open tracefile for writing
-    outfile     = open(sram_read_trace_file, 'w')
-    #ofmap_out   = open(sram_write_trace_file, 'w')
+    with open(sram_read_trace_file, 'w') as outfile:
+        #ofmap_out   = open(sram_write_trace_file, 'w')
 
-    # Adding progress bar
-    tot  = e2 * num_v_fold
-    #print("Total = " + str(tot))
-    pbar = tqdm(total=tot)
+        # Adding progress bar
+        tot  = e2 * num_v_fold
+        #print("Total = " + str(tot))
+        pbar = tqdm(total=tot)
 
-    # Generate traces here
-    # The condition checks
-    #       1)  if the all the input traces for last v fold is generated
-    # and   2)  if all the filter traces have been generated
-    #while(remaining_px[num_v_fold-1] > 0) or (filt_done == False):
-    while(ifmap_done == False) or (filt_done == False):
-        ifmap_read = ""
-        filt_read  = ""
-        rows_used = 0
-        cols_used = 0
-        
-        # Generate address for ifmap
-        for r in range(dim_rows):
+            # Generate traces here
+            # The condition checks
+            #       1)  if the all the input traces for last v fold is generated
+            # and   2)  if all the filter traces have been generated
+            #while(remaining_px[num_v_fold-1] > 0) or (filt_done == False):
+        while not ifmap_done or not filt_done:
+            ifmap_read = ""
+            filt_read  = ""
+            rows_used = 0
+            cols_used = 0
 
-            if(row_clk_offset[r] >= 0):     # Take care of the skew
+            # Generate address for ifmap
+            for r in range(dim_rows):
 
-                inc = row_clk_offset[r]
+                if(row_clk_offset[r] >= 0):     # Take care of the skew
 
-                addr_row_offset = math.floor(inc / rc) * ifmap_w * num_channels
-                addr_col_offset = inc % rc
-                ifmap_addr = row_base_addr[r] + addr_row_offset + addr_col_offset 
-                ifmap_read += str(int(ifmap_addr)) + ", "
-                rows_used += 1
-            else:
-                ifmap_read += ", "
+                    inc = row_clk_offset[r]
 
-            row_clk_offset[r] += 1
-
-            if (row_clk_offset[r] > 0) and (row_clk_offset[r] % r2c == 0):   #Completed MAC for one OFMAP px
-                
-                row_ofmap_idx[r] += dim_rows
-                ofmap_idx = row_ofmap_idx[r]
-
-                # Update progress bar
-                pbar.update(1)
-
-                if ofmap_idx < e2:
-                    row_clk_offset[r] = 0
-
-                    base_row_id = math.floor(ofmap_idx / ofmap_w) * stride
-                    base_col_id = ofmap_idx % ofmap_w * stride
-                    base_addr  = base_row_id * hc + base_col_id * num_channels
-                    row_base_addr[r] = base_addr
-
+                    addr_row_offset = math.floor(inc / rc) * ifmap_w * num_channels
+                    addr_col_offset = inc % rc
+                    ifmap_addr = row_base_addr[r] + addr_row_offset + addr_col_offset 
+                    ifmap_read += str(int(ifmap_addr)) + ", "
+                    rows_used += 1
                 else:
-                    v_fold_row[r] += 1
-                    #pbar.update(e2)
+                    ifmap_read += ", "
 
-                    if(v_fold_row[r] < num_v_fold):
-                        row_ofmap_idx[r]  = r
+                row_clk_offset[r] += 1
 
-                        base_row_id = math.floor(r / ofmap_w) * stride
-                        base_col_id = r % ofmap_w * stride
+                if (row_clk_offset[r] > 0) and (row_clk_offset[r] % r2c == 0):   #Completed MAC for one OFMAP px
+
+                    row_ofmap_idx[r] += dim_rows
+                    ofmap_idx = row_ofmap_idx[r]
+
+                    # Update progress bar
+                    pbar.update(1)
+
+                    if ofmap_idx < e2:
+                        row_clk_offset[r] = 0
+
+                        base_row_id = math.floor(ofmap_idx / ofmap_w) * stride
+                        base_col_id = ofmap_idx % ofmap_w * stride
                         base_addr  = base_row_id * hc + base_col_id * num_channels
-                        row_base_addr[r]  = base_addr
-
-                        # Stall this col from proceeding until all the rows reach the v_fold boundary
-                        if (r != 0) and ((v_fold_row[r] > v_fold_row[r-1]) or (v_fold_barrier[r-1] == True)):
-                            row_clk_offset[r] = neg_inf
-                            v_fold_barrier[r] = True
-                        else:
-                            row_clk_offset[r] = 0
+                        row_base_addr[r] = base_addr
 
                     else:
-                        row_clk_offset[r] = neg_inf
+                        v_fold_row[r] += 1
+                        #pbar.update(e2)
 
-        # Get out of the barrier one by one
-        # IMPORTANT: The barrier insertion and recovery is in separate loops to ensure that
-        #            in a given clock cycle insertion for all rows strictly happen before the release.
-        #            The flag ensures only one col is released per cycle
-        # Since indx 0 never enters the barrier, this should work fine
-        flag = False
-        for r in range(dim_rows):
-            if v_fold_barrier[r] and flag==False:
-                if (v_fold_row[r] == v_fold_row[r-1]) and (v_fold_barrier[r-1] == False):
+                        if(v_fold_row[r] < num_v_fold):
+                            row_ofmap_idx[r]  = r
+
+                            base_row_id = math.floor(r / ofmap_w) * stride
+                            base_col_id = r % ofmap_w * stride
+                            base_addr  = base_row_id * hc + base_col_id * num_channels
+                            row_base_addr[r]  = base_addr
+
+                            # Stall this col from proceeding until all the rows reach the v_fold boundary
+                            if (r != 0) and ((v_fold_row[r] > v_fold_row[r-1]) or (v_fold_barrier[r-1] == True)):
+                                row_clk_offset[r] = neg_inf
+                                v_fold_barrier[r] = True
+                            else:
+                                row_clk_offset[r] = 0
+
+                        else:
+                            row_clk_offset[r] = neg_inf
+
+            # Get out of the barrier one by one
+            # IMPORTANT: The barrier insertion and recovery is in separate loops to ensure that
+            #            in a given clock cycle insertion for all rows strictly happen before the release.
+            #            The flag ensures only one col is released per cycle
+            # Since indx 0 never enters the barrier, this should work fine
+            flag = False
+            for r in range(dim_rows):
+                if (
+                    v_fold_barrier[r]
+                    and not flag
+                    and (v_fold_row[r] == v_fold_row[r - 1])
+                    and (v_fold_barrier[r - 1] == False)
+                ):
                     v_fold_barrier[r] = False
                     flag = True
                     row_clk_offset[r] = row_clk_offset[r-1] -1
 
-        # Check if all input traces are done
-        ifmap_done = True
-        for r in range(dim_rows):
-            if row_clk_offset[r] > 0:
-                ifmap_done = False
+            ifmap_done = all(row_clk_offset[r] <= 0 for r in range(dim_rows))
+            # Generate address for filters
+            for c in range(dim_cols):
+                if(col_clk_offset[c] >= 0):     # Take care of the skew
+                    inc = col_clk_offset[c]
 
-        # Generate address for filters
-        for c in range(dim_cols):
-            if(col_clk_offset[c] >= 0):     # Take care of the skew
-                inc = col_clk_offset[c]
-                
-                filt_addr = col_base_addr[c] + inc + filt_base 
-                filt_read += str(filt_addr) + ", "
-                cols_used += 1
-            else:
-                filt_read += ", "
-
-            col_clk_offset[c] += 1
-
-            if(col_clk_offset[c] > 0) and (col_clk_offset[c] % r2c == 0):
-
-                # Get the v fold this col is working on and check the status of input trace generation
-                #rem_px = remaining_px[v_fold_col[c]]
-
-                #Tracking on the basis of h_folds
-                h_fold_col[c] += 1
-
-                # Anand: Check if all the input traces are generated for the given v fold
-                if (h_fold_col[c] < num_h_fold):
-                    col_clk_offset[c] = 0
+                    filt_addr = col_base_addr[c] + inc + filt_base 
+                    filt_read += str(filt_addr) + ", "
+                    cols_used += 1
                 else:
-                    v_fold_col[c] += 1
-                    filt_id = v_fold_col[c] * dim_cols + c
+                    filt_read += ", "
 
-                    # All filters might not be active in the last fold
-                    # Adding the filter ID check to ensure only valid cols are active
-                    if(v_fold_col[c] < num_v_fold) and (filt_id < num_filters):
+                col_clk_offset[c] += 1
+
+                if(col_clk_offset[c] > 0) and (col_clk_offset[c] % r2c == 0):
+
+                    # Get the v fold this col is working on and check the status of input trace generation
+                    #rem_px = remaining_px[v_fold_col[c]]
+
+                    #Tracking on the basis of h_folds
+                    h_fold_col[c] += 1
+
+                    # Anand: Check if all the input traces are generated for the given v fold
+                    if (h_fold_col[c] < num_h_fold):
                         col_clk_offset[c] = 0
-                        h_fold_col[c] = 0
-
-                        base = filt_id * r2c
-                        col_base_addr[c] = base
-
                     else:
-                        col_clk_offset[c] = neg_inf
-                        lane_done[c] = True
+                        v_fold_col[c] += 1
+                        filt_id = v_fold_col[c] * dim_cols + c
 
-        # Check if all filter traces are generated
-        filt_done = True
-        for c in range(dim_cols):
-            if lane_done[c] == False:
-                filt_done = False
+                        # All filters might not be active in the last fold
+                        # Adding the filter ID check to ensure only valid cols are active
+                        if(v_fold_col[c] < num_v_fold) and (filt_id < num_filters):
+                            col_clk_offset[c] = 0
+                            h_fold_col[c] = 0
 
-                                                
-        # Write to trace file
-        global_cycle = cycle + local_cycle
-        entry = str(global_cycle) + ", " + ifmap_read + filt_read + "\n"
-        outfile.write(entry)
+                            base = filt_id * r2c
+                            col_base_addr[c] = base
 
-        this_util = (rows_used * cols_used) / (dim_rows * dim_cols)
-        util += this_util
+                        else:
+                            col_clk_offset[c] = neg_inf
+                            lane_done[c] = True
 
-        # Update tracking variables
-        local_cycle += 1
+            filt_done = all(lane_done[c] != False for c in range(dim_cols))
+            # Write to trace file
+            global_cycle = cycle + local_cycle
+            entry = str(global_cycle) + ", " + ifmap_read + filt_read + "\n"
+            outfile.write(entry)
 
-    pbar.close()
-    outfile.close()
+            this_util = (rows_used * cols_used) / (dim_rows * dim_cols)
+            util += this_util
+
+            # Update tracking variables
+            local_cycle += 1
+
+        pbar.close()
     #ofmap_out.close()
 
     util_perc = (util / local_cycle) * 100
@@ -327,8 +314,6 @@ def gen_write_trace(
     r2c = conv_window_size
     e2  = ofmap_h * ofmap_w
 
-    # Tracking variables
-    id_row = []             # List of OFMAP ID for each row
     id_col = []             # List of filter ID for each col
     base_addr_col =[]       # Starting address of each output channel
     remaining_px  = e2
@@ -338,78 +323,70 @@ def gen_write_trace(
     local_cycle = 0
     sticky_flag = False     # This flag is in place to fix the OFMAP cycle shaving bug
 
-    for r in range(active_row):
-        id_row.append(r)
-
+    # Tracking variables
+    id_row = [r for r in range(active_row)]
     for c in range(active_col):
         id_col.append(c)
 
         base_col = c
         base_addr_col.append(base_col)
 
-    #Open the file for writing
-    outfile = open(sram_write_trace_file,"w")
+    with open(sram_write_trace_file,"w") as outfile:
+        #This is the cycle when all the OFMAP elements in the first col become available
+        local_cycle = r2c + active_col - 1
 
-    #This is the cycle when all the OFMAP elements in the first col become available
-    local_cycle = r2c + active_col - 1
+        while (remaining_px > 0) or (remaining_filt > 0):
 
-    while (remaining_px > 0) or (remaining_filt > 0):
+            active_row = min(dim_rows, remaining_px)
 
-        active_row = min(dim_rows, remaining_px)
+            for r in range(active_row):
+                local_px = id_row[r]
+                remaining_px -= 1
+                id_row[r] += active_row     # Taking care of horizontal fold
 
-        for r in range(active_row):
-            local_px = id_row[r]
-            remaining_px -= 1
-            id_row[r] += active_row     # Taking care of horizontal fold
-
-            ofmap_trace = ""
-            for c in range(active_col):
-                addr = ofmap_base + base_addr_col[c] + local_px * num_filters
-                ofmap_trace += str(addr) + ", "
-
-            # Write the generated traces to the file
-            entry = str(local_cycle + r) + ", " + ofmap_trace + "\n"
-            outfile.write(entry)
-
-        # Take care of the vertical fold
-        if remaining_px == 0:
-            remaining_filt -= active_col
-
-            # In case of vertical fold we have to track when the output of (0,0) is generated
-            # Shifting back local cycles to capture the last OFMAP generation in (0,0) for this fold
-            last_fold_cycle   = local_cycle + active_row
-            local_cycle -= (active_row + active_col - 1)
-            sticky_flag = True
-
-            # There are more OFMAP channels to go
-            if remaining_filt > 0:
-                remaining_px = e2
-                last_active_col = active_col
-                active_col = min(remaining_filt, dim_cols)
-
-                # Reassign col base addresses
+                ofmap_trace = ""
                 for c in range(active_col):
-                    base_addr_col[c] += last_active_col
+                    addr = ofmap_base + base_addr_col[c] + local_px * num_filters
+                    ofmap_trace += str(addr) + ", "
 
-                active_row = min(dim_rows, remaining_px)
-                # Reassign row base addresses
-                for r in range(active_row):
-                    id_row[r] = r
+                # Write the generated traces to the file
+                entry = str(local_cycle + r) + ", " + ofmap_trace + "\n"
+                outfile.write(entry)
 
-                local_cycle += r2c + active_col
-                if local_cycle < last_fold_cycle:
+                    # Take care of the vertical fold
+            if remaining_px == 0:
+                remaining_filt -= active_col
+
+                # In case of vertical fold we have to track when the output of (0,0) is generated
+                # Shifting back local cycles to capture the last OFMAP generation in (0,0) for this fold
+                last_fold_cycle   = local_cycle + active_row
+                local_cycle -= (active_row + active_col - 1)
+                sticky_flag = True
+
+                            # There are more OFMAP channels to go
+                if remaining_filt > 0:
+                    remaining_px = e2
+                    last_active_col = active_col
+                    active_col = min(remaining_filt, dim_cols)
+
+                    # Reassign col base addresses
+                    for c in range(active_col):
+                        base_addr_col[c] += last_active_col
+
+                    active_row = min(dim_rows, remaining_px)
+                    # Reassign row base addresses
+                    for r in range(active_row):
+                        id_row[r] = r
+
+                    local_cycle += r2c + active_col
+                    local_cycle = max(local_cycle, last_fold_cycle)
+                else:   # Restore the local cycle to return to the main function
                     local_cycle = last_fold_cycle
+                    #local_cycle += (active_row + active_col)
+                    #sticky_flag = False
 
-
-            else:   # Restore the local cycle to return to the main function
-                local_cycle = last_fold_cycle
-                #local_cycle += (active_row + active_col)
-                #sticky_flag = False
-
-        else:   # If this is not a vertical fold then it is business as usual
-            local_cycle += max(r2c, active_row)
-
-    outfile.close()
+            else:   # If this is not a vertical fold then it is business as usual
+                local_cycle += max(r2c, active_row)
 
     #if sticky_flag:
     #    local_cycle += (active_row + active_col)

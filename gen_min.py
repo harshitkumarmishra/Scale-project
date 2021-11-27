@@ -10,38 +10,33 @@ command = "ls " + net_name + "/ > tmp"
 os.system(command)
 
 lst = open("tmp", 'r')
-min_file = open(dump_file, 'a')
+with open(dump_file, 'a') as min_file:
+    for fname in lst:
+        fname = fname.strip()
+        fname = net_name +"/" + fname
 
-for fname in lst:
-    fname = fname.strip()
-    fname = net_name +"/" + fname
+        with open(fname, 'r') as f:
+            first = True
+            min_cycl= 1000000000
+            min_dim = ""
 
-    f = open(fname, 'r')
-    first = True
-    min_cycl= 1000000000
-    min_dim = ""
+            for l in f:
+                if first:
+                    first = False
+                else:
+                    entry = l.strip().split(',')
 
-    for l in f:
-        if first:
-            first = False
-        else:
-            entry = l.strip().split(',')
+                    cycl = float(entry[1])
+                    #print(entry[0])
 
-            cycl = float(entry[1])
-            #print(entry[0])
+                    if cycl < min_cycl:
+                        min_cycl = cycl
+                        min_dim = entry[0]
 
-            if cycl < min_cycl:
-                min_cycl = cycl
-                min_dim = entry[0]
+            log = min_dim + "\n"
+            print(log)
+            min_file.write(log)
 
-    log = min_dim + "\n"
-    print(log)
-    min_file.write(log)
-
-    f.close()
-
-lst.close()
-min_file.close()
-
+    lst.close()
 command = "rm -rf tmp"
 os.system(command)

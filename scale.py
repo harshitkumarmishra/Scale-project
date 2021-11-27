@@ -150,15 +150,11 @@ class scale:
         else:
             path = "./outputs/" + self.run_name
 
-        if not os.path.exists(path):
-            os.system("mkdir " + path)
-        else:
+        if os.path.exists(path):
             t = time.time()
             new_path= path + "_" + str(t)
             os.system("mv " + path + " " + new_path)
-            os.system("mkdir " + path)
-
-
+        os.system("mkdir " + path)
         cmd = "mv *.csv " + path
         os.system(cmd)
 

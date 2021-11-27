@@ -208,44 +208,39 @@ def gen_filter_trace(
         filters_this_fold = 4,
         sram_read_trace_file = "sram_read.csv"
 ):
-    outfile = open(sram_read_trace_file,'a')
- 
-    # There is no data from the left side till the weights are fed in
-    # This prefix is to mark the blanks
-    prefix  = ""
-    for r in range(num_rows):
-        prefix += ", "
+    with open(sram_read_trace_file,'a') as outfile:
+            # There is no data from the left side till the weights are fed in
+            # This prefix is to mark the blanks
+        prefix = "".join(", " for _ in range(num_rows))
+        # Calculate the convolution window size
+        r2c = filt_h * filt_w * num_channels 
 
-    # Calculate the convolution window size
-    r2c = filt_h * filt_w * num_channels 
+        rem = filters_this_fold                 # Track the number of filters yet to process
 
-    rem = filters_this_fold                 # Track the number of filters yet to process
+            #For each wrap around
+        for w in range(parallel_window):
+            # Number of active columns in this wrap
+            cols = min(num_cols, rem)
+            rem -= cols
 
-    #For each wrap around
-    for w in range(parallel_window):
-        # Number of active columns in this wrap
-        cols = min(num_cols, rem)
-        rem -= cols
+                    # For each row in the window
+            for _ in range(r2c):
+                entry = str(cycle) + ", " + prefix
+                cycle += 1
 
-        # For each row in the window
-        for r in range(r2c):
-            entry = str(cycle) + ", " + prefix
-            cycle += 1
-            
-            # In each cycle, for each column feed one weight
-            for c in range(cols):
-                indx  = w * num_cols + c
-                entry += str(col_addr[indx]) + ", "         
-                col_addr[indx] += 1
+                # In each cycle, for each column feed one weight
+                for c in range(cols):
+                    indx  = w * num_cols + c
+                    entry += str(col_addr[indx]) + ", "         
+                    col_addr[indx] += 1
 
-            if cols < num_cols:
-                for _ in range(c, num_cols):
-                    entry += ", "
+                if cols < num_cols:
+                    for _ in range(c, num_cols):
+                        entry += ", "
 
-            entry += "\n"
-            outfile.write(entry)
- 
-    outfile.close()
+                entry += "\n"
+                outfile.write(entry)
+
     return cycle
 
 
@@ -258,70 +253,66 @@ def gen_ifmap_trace(
         parallel_window = 1,
         sram_read_trace_file = "sram_read.csv"
 ):
-    outfile = open(sram_read_trace_file,'a')
-    postfix = ""
-    for c in range(num_cols):
-        postfix += ", "
-    
-    E_h = math.floor((ifmap_h - filt_h + stride) / stride)
-    E_w = math.floor((ifmap_w - filt_w + stride) / stride)
-    e2  = E_h * E_w
-    r2c = filt_h * filt_w * num_channels
-    rc = filt_w * num_channels
-    hc = ifmap_w * num_channels
+    with open(sram_read_trace_file,'a') as outfile:
+        postfix = "".join(", " for _ in range(num_cols))
+        E_h = math.floor((ifmap_h - filt_h + stride) / stride)
+        E_w = math.floor((ifmap_w - filt_w + stride) / stride)
+        e2  = E_h * E_w
+        r2c = filt_h * filt_w * num_channels
+        rc = filt_w * num_channels
+        hc = ifmap_w * num_channels
 
-    idle = num_rows - (r2c * parallel_window)
-    idle = max(idle, 0)
-    used_rows = num_rows - idle
+        idle = num_rows - (r2c * parallel_window)
+        idle = max(idle, 0)
+        used_rows = num_rows - idle
 
-    # Adding entries for columns and empty rows
-    #print("Idle lanes = " + str(idle))
-    idle += num_cols
-    for i in range(idle):
-        postfix += ", "
-    postfix += "\n"
+        # Adding entries for columns and empty rows
+        #print("Idle lanes = " + str(idle))
+        idle += num_cols
+        for _ in range(idle):
+            postfix += ", "
+        postfix += "\n"
 
-    base_addr = 0
-    
-    for e in range(int(e2)):
-        entry = str(cycle) + ", "
-        cycle += 1    
+        base_addr = 0
 
-        #print("Cycle= " + str(cycle))
-        #Inner loop for all the rows in array
-        num_rows = r2c 
-        row_entry = []
-        for r in range(num_rows):
-            row_idx = math.floor(r / rc)  # math.floor to get in integral value
-            col_idx = r % rc 
-            add = base_addr + row_idx * hc + col_idx 
-            #print("Row idx " + str(row_idx) + " col_idx " + str(col_idx) +" add " + str(add))
-            row_entry.append(add)
+        for e in range(int(e2)):
+            entry = str(cycle) + ", "
+            cycle += 1    
 
-        # Reverse the printing order
-        # Reversal is needed because the filter are stored in upside down order in the array
-        # ie. last row has the first weight element
-        l = len(row_entry)
-        #print("Parallel windows = " + str(parallel_window))
-        for w in range(parallel_window):
-            #print("Window = " + str(w))
-            for ridx in range(l):
-                entry += str(row_entry[l - ridx -1]) + ", "
+            #print("Cycle= " + str(cycle))
+            #Inner loop for all the rows in array
+            num_rows = r2c
+            row_entry = []
+            for r in range(num_rows):
+                row_idx = math.floor(r / rc)  # math.floor to get in integral value
+                col_idx = r % rc 
+                add = base_addr + row_idx * hc + col_idx 
+                #print("Row idx " + str(row_idx) + " col_idx " + str(col_idx) +" add " + str(add))
+                row_entry.append(add)
 
-        entry += postfix
-        outfile.write(entry)
+            # Reverse the printing order
+            # Reversal is needed because the filter are stored in upside down order in the array
+            # ie. last row has the first weight element
+            l = len(row_entry)
+                    #print("Parallel windows = " + str(parallel_window))
+            for _ in range(parallel_window):
+                #print("Window = " + str(w))
+                for ridx in range(l):
+                    entry += str(row_entry[l - ridx -1]) + ", "
 
-        # Calculate the IFMAP addresses for next cycle
-        px_this_row = (e+1) % E_w
-        if px_this_row == 0:
-            #print("New row")
-            ifmap_row = math.floor(base_addr / hc)
-            base_addr = (ifmap_row +  stride) * hc
-        else:
-            base_addr += stride * num_channels
-        #print("OFAMP px = " + str(e+1) + " base_addr: " + str(base_addr))
+            entry += postfix
+            outfile.write(entry)
 
-    outfile.close()
+            # Calculate the IFMAP addresses for next cycle
+            px_this_row = (e+1) % E_w
+            if px_this_row == 0:
+                #print("New row")
+                ifmap_row = math.floor(base_addr / hc)
+                base_addr = (ifmap_row +  stride) * hc
+            else:
+                base_addr += stride * num_channels
+                #print("OFAMP px = " + str(e+1) + " base_addr: " + str(base_addr))
+
     return cycle, used_rows
 
 
@@ -332,29 +323,24 @@ def gen_trace_filter_partial(
                     remaining=4,
                     sram_read_trace_file="sram_read.csv"
 ):
-        outfile = open(sram_read_trace_file, 'a')
+    with open(sram_read_trace_file, 'a') as outfile:
         num_cols = len(col_addrs)
 
         # output formatting: Add empty commas for row addresses as no element is fed from the left
-        prefix = ""
-        for r in range(num_rows):
-            prefix += ", "
-
-        # Entries per cycle 
-        for r in range(remaining):              # number of rows this cycle
+        prefix = "".join(", " for _ in range(num_rows))
+        # Entries per cycle
+        for _ in range(remaining):              # number of rows this cycle
             entry = str(cycle) + ", " + prefix
 
             for c in range(num_cols):
                 entry += str(col_addrs[c]) + ", "
                 col_addrs[c] += 1
-            
+
             cycle += 1
             entry += "\n"
             outfile.write(entry)
 
-        outfile.close()
-
-        return cycle, col_addrs 
+    return cycle, col_addrs 
 
 
 def gen_trace_ifmap_partial(
@@ -370,58 +356,56 @@ def gen_trace_ifmap_partial(
                     ifmap_base = 0, ofmap_base = 2000000,
                     sram_read_trace_file = "sram_read.csv"
 ):
-    outfile = open(sram_read_trace_file, 'a')
-    postfix = ""
-    for c in range(num_cols):
-        postfix += ", "
-    postfix += "\n"
+    with open(sram_read_trace_file, 'a') as outfile:
+        postfix = "".join(", " for _ in range(num_cols))
+        postfix += "\n"
 
-    r2c = filt_h * filt_w * num_channels
-    rc = filt_w * num_channels
-    hc = ifmap_w * num_channels
-    E_w = (ifmap_w - filt_w + stride) / stride 
-    E_h = (ifmap_h - filt_h + stride) / stride 
+        r2c = filt_h * filt_w * num_channels
+        rc = filt_w * num_channels
+        hc = ifmap_w * num_channels
+        E_w = (ifmap_w - filt_w + stride) / stride
+        E_h = (ifmap_h - filt_h + stride) / stride 
 
-    num_ofmap_px = E_h * E_w
-    index = r2c - remaining
-    base_addr = 0 
-            
-    filter_done = num_filters - remaining_filters
-    #outfile.write(str(filter_done) + ", " + str(num_filters)+", "+str(remaining_filters)+", "+ "\n")
-    #ofmap_offset = filter_done * num_ofmap_px
-    ofmap_offset = filter_done
-    effective_cols = min(remaining_filters, num_cols)
-    tick = 0                                # Proxy for clock to track input skewing
+        num_ofmap_px = E_h * E_w
+        index = r2c - remaining
+        base_addr = 0 
 
-    # Outerloop for all ofmap pixels in an ofmap channel
-    for e in range(int(num_ofmap_px)):
-        entry = str(cycle) + ", "
-        cycle += 1    
+        filter_done = num_filters - remaining_filters
+        #outfile.write(str(filter_done) + ", " + str(num_filters)+", "+str(remaining_filters)+", "+ "\n")
+        #ofmap_offset = filter_done * num_ofmap_px
+        ofmap_offset = filter_done
+        effective_cols = min(remaining_filters, num_cols)
+        tick = 0                                # Proxy for clock to track input skewing
 
-        #print("Cycle= " + str(cycle))
-        #Inner loop for all the rows in array
-        num_rows = min(num_rows, remaining)
-        row_entry = []
-        for r in range(num_rows):
-            row_idx = math.floor((index+r) / rc)  # math.floor to get in integral value
-            col_idx = (index+r) % rc 
-            add = base_addr + row_idx * hc + col_idx 
-            #print("Row idx " + str(row_idx) + " col_idx " + str(col_idx) +" add " + str(add))
-            row_entry.append(add)
+        # Outerloop for all ofmap pixels in an ofmap channel
+        for e in range(int(num_ofmap_px)):
+            entry = str(cycle) + ", "
+            cycle += 1    
 
-        # Reverse the printing order
-        # Reversal is needed because the filter are stored in upside down order in the array
-        # ie. last row has the first weight element
-        l = len(row_entry)
-        for ridx in range(l):
-            entry += str(row_entry[l - ridx -1]) + ", "
+            #print("Cycle= " + str(cycle))
+            #Inner loop for all the rows in array
+            num_rows = min(num_rows, remaining)
+            row_entry = []
+            for r in range(num_rows):
+                row_idx = math.floor((index+r) / rc)  # math.floor to get in integral value
+                col_idx = (index+r) % rc 
+                add = base_addr + row_idx * hc + col_idx 
+                #print("Row idx " + str(row_idx) + " col_idx " + str(col_idx) +" add " + str(add))
+                row_entry.append(add)
 
-        # In case of partial mapping
-        # index > 0 implies that there is a partial sum generated from prev h_fold
-        # This partial sum is now fed from the top to be summed with the PS generated in this h_fold
-        # The following part print the read addresses for PS
-        # Anand : TODO, Implementation choice, do not support right now
-        '''
+            # Reverse the printing order
+            # Reversal is needed because the filter are stored in upside down order in the array
+            # ie. last row has the first weight element
+            l = len(row_entry)
+            for ridx in range(l):
+                entry += str(row_entry[l - ridx -1]) + ", "
+
+            # In case of partial mapping
+            # index > 0 implies that there is a partial sum generated from prev h_fold
+            # This partial sum is now fed from the top to be summed with the PS generated in this h_fold
+            # The following part print the read addresses for PS
+            # Anand : TODO, Implementation choice, do not support right now
+            '''
         if index > 0:
             postfix = ""
             for c in range(effective_cols):
@@ -435,19 +419,18 @@ def gen_trace_ifmap_partial(
             #print("Tick =", str(tick) + "Postfix= " + postfix)
             postfix += "\n"
         '''
-        entry += postfix
-        outfile.write(entry)
+            entry += postfix
+            outfile.write(entry)
 
-        px_this_row = (e+1) % E_w
-        if px_this_row == 0:
-            #print("New row")
-            ifmap_row = math.floor(base_addr / hc)
-            base_addr = (ifmap_row + stride) * hc
-        else:
-            base_addr += stride * num_channels
-        #print("OFAMP px = " + str(e+1) + " base_addr: " + str(base_addr))
+            px_this_row = (e+1) % E_w
+            if px_this_row == 0:
+                #print("New row")
+                ifmap_row = math.floor(base_addr / hc)
+                base_addr = (ifmap_row + stride) * hc
+            else:
+                base_addr += stride * num_channels
+            #print("OFAMP px = " + str(e+1) + " base_addr: " + str(base_addr))
 
-    outfile.close()
     return cycle
 
 
@@ -462,43 +445,40 @@ def gen_trace_ofmap(
                     num_filter   = 8,       # To track if all filters have finished
                     sram_write_trace_file = "sram_write.csv"
 ):
-    outfile = open(sram_write_trace_file,'a')
-    #cycle = num_cols + cycle     # Accounts for the time taken to reduce accross all cols
+    with open(sram_write_trace_file,'a') as outfile:
+            #cycle = num_cols + cycle     # Accounts for the time taken to reduce accross all cols
 
-    # Corner case when parallel_window = 1, but num_filter < num_cols
-    if parallel_window > 1:
-        cycle += num_cols
+            # Corner case when parallel_window = 1, but num_filter < num_cols
+        if parallel_window > 1:
+            cycle += num_cols
+        else:
+            rem    = (num_filter - filters_done)
+            cycle += min(rem, num_cols)
         cycle += window_size                # window_size == r2c
-    else:
-        rem    = (num_filter - filters_done)
-        cycle += min(rem, num_cols)
-        cycle += window_size
+        #ofmap_add_offset  = filters_done * num_ofmap_px
+        ofmap_add_offset  = filters_done
+        remaining_filters = num_filter - filters_done
 
-    #ofmap_add_offset  = filters_done * num_ofmap_px
-    ofmap_add_offset  = filters_done
-    remaining_filters = num_filter - filters_done
-    
-    effective_cols    = num_cols * parallel_window
-    effective_cols    = min(effective_cols, remaining_filters)
+        effective_cols    = num_cols * parallel_window
+        effective_cols    = min(effective_cols, remaining_filters)
 
-    for e in range(int(num_ofmap_px)):
-        entry = str(cycle) + ", "
-        cycle += 1
-        
-        done = filters_done
-        for col in range(effective_cols):
-            if done < num_filter:
-                a = e * num_filter + col                # z first row major
-                a = a + ofmap_add_offset + ofmap_base
-                entry += str(a) + ", "
-            else: 
-                # Code should not enter this part
-                entry += "!, "
+        for e in range(int(num_ofmap_px)):
+            entry = str(cycle) + ", "
+            cycle += 1
 
-        entry += "\n"
-        outfile.write(entry)
+            done = filters_done
+            for col in range(effective_cols):
+                if done < num_filter:
+                    a = e * num_filter + col                # z first row major
+                    a = a + ofmap_add_offset + ofmap_base
+                    entry += str(a) + ", "
+                else: 
+                    # Code should not enter this part
+                    entry += "!, "
 
-    outfile.close()
+            entry += "\n"
+            outfile.write(entry)
+
     return cycle
 
 
@@ -515,30 +495,28 @@ def gen_trace_ofmap_partial_imm(
                         filters_done = 0,
                         sram_write_trace_file = "sram_write.csv"
 ):
-    outfile = open(sram_write_trace_file,'a')
-    start_cycle = num_rows + cycle
+    with open(sram_write_trace_file,'a') as outfile:
+        start_cycle = num_rows + cycle
 
-    col_addr = []
-    for col in range(int(num_cols)):
-        a = (filters_done + col)
-        col_addr.append(a)
-    
-    for tick in range(int(num_ofmap_px + num_cols)):
-        cycle = start_cycle + tick
-
-        entry = str(cycle) + ", "
+        col_addr = []
         for col in range(int(num_cols)):
-            # Condition to maintain skew
-            if tick >= col and (tick - col)< num_ofmap_px:
-                entry += str(col_addr[col]) + ", "
-                col_addr[col] += num_filter
-            else:
-                entry += ", "
-        
-        entry += "\n"
-        outfile.write(entry)
+            a = (filters_done + col)
+            col_addr.append(a)
 
-    outfile.close()
+        for tick in range(int(num_ofmap_px + num_cols)):
+            cycle = start_cycle + tick
+
+            entry = str(cycle) + ", "
+            for col in range(int(num_cols)):
+                # Condition to maintain skew
+                if tick >= col and (tick - col)< num_ofmap_px:
+                    entry += str(col_addr[col]) + ", "
+                    col_addr[col] += num_filter
+                else:
+                    entry += ", "
+
+            entry += "\n"
+            outfile.write(entry)
 
 
 if __name__ == "__main__":

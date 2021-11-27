@@ -207,15 +207,11 @@ def gen_trace_ifmap_partial(
                     sram_read_trace_file="sram_read.csv"
 ):
 
-        index = h_fold * num_rows
+    index = h_fold * num_rows
 
-        outfile = open(sram_read_trace_file, 'a')
-
+    with open(sram_read_trace_file, 'a') as outfile:
         # output formatting: Add empty commas for row addresses as no element is fed from the left
-        prefix = ""
-        for r in range(num_rows):
-            prefix += ", "
-
+        prefix = "".join(", " for _ in range(num_rows))
         # Entries per cycle 
         for r in range(active_rows):              # number of rows this fold
             entry = str(cycle) + ", " + prefix
@@ -240,9 +236,7 @@ def gen_trace_ifmap_partial(
             entry += "\n"
             outfile.write(entry)
 
-        outfile.close()
-
-        return cycle
+    return cycle
 
 
 def gen_trace_filter_partial(
@@ -259,65 +253,59 @@ def gen_trace_filter_partial(
 
     local_cycles = cycle
 
-    outfile = open(sram_read_trace_file, 'a')
+    with open(sram_read_trace_file, 'a') as outfile:
+        # This list tracks the PS address generation per col
+        ofmap_px_id_list = []
+        for c in range(active_cols):
+            ofmap_index = v_fold * num_cols + c
+            ofmap_px_id_list.append(ofmap_index)
 
-    # This list tracks the PS address generation per col
-    ofmap_px_id_list = []
-    for c in range(active_cols):
-        ofmap_index = v_fold * num_cols + c
-        ofmap_px_id_list.append(ofmap_index)
+            # Postfix is the empty string indicating that no data is fed from the cols
+        postfix = "".join(", " for _ in range(active_cols))
+            # Per cycle one filter value is applied to all rows
+            #num_row_traces = num_filters + active_cols
+        for f in range(num_filters):
+            this_filt_addr = filt_addr_list[f]
 
-    # Postfix is the empty string indicating that no data is fed from the cols
-    postfix = ""
-    for _ in range(active_cols):
-        postfix += ", "
+            entry = str(local_cycles) + ", "
 
+            # Calculate the row addresses for this cycle
+            row_entry = []
+            for _ in range(active_rows):
+                row_entry.append(this_filt_addr)
+                this_filt_addr += 1
 
-    # Per cycle one filter value is applied to all rows
-    #num_row_traces = num_filters + active_cols
-    for f in range(num_filters):
-        this_filt_addr = filt_addr_list[f]
+            filt_addr_list[f] = this_filt_addr
 
-        entry = str(local_cycles) + ", "
+            # The log will get the addresses in reverse
+            l = len(row_entry)
+            for ridx in range(l):
+                entry += str(row_entry[l - ridx - 1]) + ", "
 
-        # Calculate the row addresses for this cycle
-        row_entry = []
-        for r in range(active_rows):
-            row_entry.append(this_filt_addr)
-            this_filt_addr += 1
+            # Anand: TODO: Add partial sum input trace
+            # Calculate the column addresses
+            # In case of partial mapping partial sums (OFMAP addresses) need to be passed into the array
+            # This partial sum is fed from the top of the array and summed with the sums generated in this h_fold
+            #if h_fold == 0:
+            #    for _ in range(num_cols):
+            #        entry += ", "
 
-        filt_addr_list[f] = this_filt_addr
+            #else:
+            #    for col in range(active_cols):
+            #        ofmap_ch_index = f - col
 
-        # The log will get the addresses in reverse
-        l = len(row_entry)
-        for ridx in range(l):
-            entry += str(row_entry[l - ridx - 1]) + ", "
+            #        if ofmap_ch_index >= 0:
+            #            ofmap_addr = ofmap_px_id_list[f] * num_filters + ofmap_ch_index
+            #            ofmap_addr += ofmap_base_addr
+            #            entry += str(ofmap_addr) + ", "
 
-        # Anand: TODO: Add partial sum input trace
-        # Calculate the column addresses
-        # In case of partial mapping partial sums (OFMAP addresses) need to be passed into the array
-        # This partial sum is fed from the top of the array and summed with the sums generated in this h_fold
-        #if h_fold == 0:
-        #    for _ in range(num_cols):
-        #        entry += ", "
+            #        else:
+            #            entry += ", "
 
-        #else:
-        #    for col in range(active_cols):
-        #        ofmap_ch_index = f - col
+            local_cycles += 1
+            entry += postfix + "\n"
+            outfile.write(entry)
 
-        #        if ofmap_ch_index >= 0:
-        #            ofmap_addr = ofmap_px_id_list[f] * num_filters + ofmap_ch_index
-        #            ofmap_addr += ofmap_base_addr
-        #            entry += str(ofmap_addr) + ", "
-
-        #        else:
-        #            entry += ", "
-
-        local_cycles += 1
-        entry += postfix + "\n"
-        outfile.write(entry)
-
-    outfile.close()
     return local_cycles, filt_addr_list
 
 
@@ -334,7 +322,7 @@ def gen_trace_ofmap(
 
     active_cols_list = []
     rem = num_ofmap_this_fold
-    for p in range(parallel_window):
+    for _ in range(parallel_window):
         a = min(rem, num_cols)
         active_cols_list.append(int(a))
         rem -= a
@@ -350,32 +338,29 @@ def gen_trace_ofmap(
     # This offset indicates the cycle in which the data from the first col is ready
     local_cycle = cycle + window_size
 
-    outfile = open(sram_write_trace_file, 'a')
+    with open(sram_write_trace_file, 'a') as outfile:
+        total_ofmap_cycles = num_filters + max(active_cols_list)
+        for f in range(total_ofmap_cycles):
+            entry = str(local_cycle) + ", "
 
-    total_ofmap_cycles = num_filters + max(active_cols_list)
-    for f in range(total_ofmap_cycles):
-        entry = str(local_cycle) + ", "
+            for p in range(parallel_window):
+                active_cols = active_cols_list[p]
 
-        for p in range(parallel_window):
-            active_cols = active_cols_list[p]
+                for c in range(active_cols):
+                    ofmap_ch = f - c
 
-            for c in range(active_cols):
-                ofmap_ch = f - c
+                    if (ofmap_ch >= 0) and (ofmap_ch < num_filters):
+                        idx = c + p * num_cols
+                        add = ofmap_px_index_list[idx] + ofmap_ch
+                        add += ofmap_base
+                        entry += str(add) + ", "
 
-                if (ofmap_ch >= 0) and (ofmap_ch < num_filters):
-                    idx = c + p * num_cols
-                    add = ofmap_px_index_list[idx] + ofmap_ch
-                    add += ofmap_base
-                    entry += str(add) + ", "
+                    else:
+                        entry += ", "
 
-                else:
-                    entry += ", "
-
-        entry += "\n"
-        outfile.write(entry)
-        local_cycle += 1
-
-    outfile.close()
+            entry += "\n"
+            outfile.write(entry)
+            local_cycle += 1
 
     return (local_cycle - 1)
 
@@ -393,48 +378,43 @@ def gen_trace_ifmap(
 ):
     local_cycle = cycle
 
-    outfile = open(sram_read_trace_file, 'a')
+    with open(sram_read_trace_file, 'a') as outfile:
+        active_cols_list = []
+        rem = num_ifmap_this_fold
+        for _ in range(parallel_window):
+            a = min(rem, num_cols)
+            active_cols_list.append(int(a))
+            rem -= a
 
-    active_cols_list = []
-    rem = num_ifmap_this_fold
-    for p in range(parallel_window):
-        a = min(rem, num_cols)
-        active_cols_list.append(int(a))
-        rem -= a
+        prefix = "".join(", " for _ in range(num_rows))
+        for p in range(parallel_window):
+            start_idx = p * num_cols
+            end_idx = start_idx + active_cols_list[p]
+            ifmap_base_addr = ifmap_base_this_fold[start_idx:end_idx]
 
-    prefix = ""
-    for _ in range(num_rows):
-        prefix += ", "
+            for idx in range(window_size):
+                entry = str(local_cycle) + ", "
+                entry += prefix
 
-    for p in range(parallel_window):
-        start_idx = p * num_cols
-        end_idx = start_idx + active_cols_list[p]
-        ifmap_base_addr = ifmap_base_this_fold[start_idx:end_idx]
+                # Calculating address within a window
+                row_idx = math.floor(idx / rc)
+                col_idx = (idx) % rc
 
-        for idx in range(window_size):
-            entry = str(local_cycle) + ", "
-            entry += prefix
+                local_addr = row_idx * hc + col_idx
 
-            # Calculating address within a window
-            row_idx = math.floor(idx / rc)
-            col_idx = (idx) % rc
+                active_cols = active_cols_list[p]
+                for col in range(active_cols):
+                    add = local_addr + ifmap_base_addr[col] +ifmap_base
+                    entry += str(int(add)) + ", "
 
-            local_addr = row_idx * hc + col_idx
+                if active_cols < num_cols:
+                    for _ in range(active_cols, num_cols):
+                        entry += ", "
 
-            active_cols = active_cols_list[p]
-            for col in range(active_cols):
-                add = local_addr + ifmap_base_addr[col] +ifmap_base
-                entry += str(int(add)) + ", "
+                entry += "\n"
+                outfile.write(entry)
+                local_cycle += 1
 
-            if active_cols < num_cols:
-                for _ in range(active_cols, num_cols):
-                    entry += ", "
-
-            entry += "\n"
-            outfile.write(entry)
-            local_cycle += 1
-
-    outfile.close()
     return local_cycle
 
 def gen_trace_filter(
@@ -446,30 +426,25 @@ def gen_trace_filter(
                     sram_read_trace_file = "sram_read.csv"
 ):
     local_cycle = cycle
-    outfile = open(sram_read_trace_file, 'a')
+    with open(sram_read_trace_file, 'a') as outfile:
+        postfix = "".join(", " for _ in range(num_cols))
+        for f in range(num_filters):
+            entry = str(local_cycle) + ", "
 
-    postfix = ""
-    for _ in range(num_cols):
-        postfix += ", "
+            for _ in range(parallel_window):
+                for indx in range(window_size):
+                    add = f * window_size  + filter_base + (window_size - indx - 1)
+                    entry += str(add) + ", "
 
-    for f in range(num_filters):
-        entry = str(local_cycle) + ", "
+            rows_written = parallel_window * window_size
+            if rows_written < num_rows:
+                for _ in range(rows_written, num_rows):
+                    entry += ", "
 
-        for p in range(parallel_window):
-            for indx in range(window_size):
-                add = f * window_size  + filter_base + (window_size - indx - 1)
-                entry += str(add) + ", "
+            entry += postfix + "\n"
+            outfile.write(entry)
+            local_cycle += 1
 
-        rows_written = parallel_window * window_size
-        if rows_written < num_rows:
-            for _ in range(rows_written, num_rows):
-                entry += ", "
-
-        entry += postfix + "\n"
-        outfile.write(entry)
-        local_cycle += 1
-
-    outfile.close()
     return local_cycle
 
 if __name__ == "__main__":
